@@ -1,0 +1,162 @@
+# Alpine-Contributor: Daniel Sabogal <dsabogalcc@gmail.com>
+# Alpine-Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+# Maintianer: Aaron Bassett <abassett@qnx.com>
+pkgname=neovim
+pkgver=0.11.4
+pkgrel=1
+pkgdesc="Vim-fork focused on extensibility and agility"
+url="https://neovim.io/"
+arch="all"
+license="Apache-2.0 AND Vim"
+depends="
+        lua5.1-lpeg
+	libiconv
+	luajit
+	libluv
+	tree-sitter
+	unibilium
+	utf8proc
+	libuv
+	tree-sitter-c
+	tree-sitter-lua
+	tree-sitter-vim
+	tree-sitter-vimdoc
+	tree-sitter-query
+	tree-sitter-markdown
+	"
+somask="/usr/lib/lua/5.1/lpeg.so"
+checkdepends="
+	diffutils
+	tree-sitter-grammars
+	xdg-utils
+	"
+makedepends="
+	qnx-io-sock-dev
+	cmake
+	gettext-dev
+	gperf
+	libtermkey-dev
+	libuv-dev
+	libvterm-dev
+	lua-luv-dev
+	ninja
+	tree-sitter-dev
+	unibilium-dev
+	utf8proc-dev
+	libiconv-dev
+	luajit-dev
+	"
+# lua5.1-mpack
+# msgpack-c-dev
+# need to fix nvim test info with lutjit ffi cdef
+options="net !check"
+subpackages="$pkgname-doc"
+source="https://github.com/neovim/neovim/archive/v$pkgver/neovim-$pkgver.tar.gz
+        qnx-endian.patch
+        qnx-forkpty.patch
+       	qnx-remove-util.patch
+	qnx-define.patch
+	nodoc.txt
+"
+
+build() {
+	local cmakeoptions=
+	case "$CARCH" in
+		ppc64le | riscv64 | s390x | loongarch64) cmakeoptions="-DPREFER_LUA=ON" ;;
+	esac
+
+	# DCI_BUILD: See https://github.com/neovim/neovim/issues/22932
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DENABLE_LTO=TRUE \
+		-DCMAKE_VERBOSE_MAKEFILE=TRUE \
+		-DCI_BUILD=OFF \
+		-DENABLE_TRANSLATIONS=OFF \
+		$cmakeoptions
+	cmake --build build
+}
+
+check() {
+	USER="$(id -un)" XDG_RUNTIME_DIR=/tmp TEST_TIMEOUT=12000 cmake --build build --target unittest
+	# Required by the unit tests but not set on the Alpine GitLab CI.
+	export USER="$(id -un)"
+
+	# Without this, the temp directory for the tests exceeds the sun_path
+	# buffer in sockaddr_un, causing test failures due to path trunctation.
+	export XDG_RUNTIME_DIR=/tmp
+
+	# Needed to ensure that neovim finds the tree-parser grammars.
+	ln -Tfs /usr/lib/tree-sitter "$builddir"/runtime/parser
+
+	export TEST_TIMEOUT=12000
+
+	msg "Running unit tests"
+	cmake --build build --target unittest
+
+	# The functional tests are known to fail on 32-bit arches.
+	# See: https://github.com/neovim/neovim/issues/32230
+	case "$CARCH" in
+	arm*|x86) return ;;
+	esac
+
+	export TEST_SKIP_FRAGILE=1
+	# fails on x86_64
+	export BUSTED_ARGS="--filter-out quitting.swapfile.dialog.on.startup"
+	# TODO: report upstream
+	BUSTED_ARGS="$BUSTED_ARGS --filter-out TUI.forwards"
+	BUSTED_ARGS="$BUSTED_ARGS --filter-out TUI.supports.undercurl"
+	# https://github.com/neovim/neovim/issues/31818
+	BUSTED_ARGS="$BUSTED_ARGS --filter-out diff.mode.overlapped.diff.blocks"
+	# https://github.com/neovim/neovim/issues/33910
+	BUSTED_ARGS="$BUSTED_ARGS --filter-out treesitter.foldexpr.doesn"
+	# https://github.com/neovim/neovim/issues/33911
+	BUSTED_ARGS="$BUSTED_ARGS --filter-out stdpath.*NVIM_APPNAME.relative.path"
+	# those appears to be flaky:
+	BUSTED_ARGS="$BUSTED_ARGS --filter-out put.command...register.special.tests.should.ring"
+	BUSTED_ARGS="$BUSTED_ARGS --filter-out get.string_chk"
+	BUSTED_ARGS="$BUSTED_ARGS --filter-out jobs.jobstop.*kills.entire.process.tree"
+	BUSTED_ARGS="$BUSTED_ARGS --filter-out buffer.cursor.position.is.correct.in.terminal.with.number"
+	# these fail on builders, should enable with rootbld
+	BUSTED_ARGS="$BUSTED_ARGS --filter-out tmpdir.*"
+
+	msg "Running functional tests"
+	cmake --build build --target functionaltest
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	# Tree-sitter grammars are packaged separately and installed into
+	# /usr/lib/tree-sitter.
+	ln -Tfs ../../../lib/tree-sitter "$pkgdir"/usr/share/nvim/runtime/parser
+}
+
+doc() {
+	default_doc
+
+	replaces="$pkgname"
+	local docdir="usr/share/nvim/runtime/doc"
+
+	mkdir -p "$subpkgdir"/$docdir
+	mv "$pkgdir"/$docdir/*.txt "$subpkgdir"/$docdir/
+
+	# When user execute ":help <pattern>", neovim will open nodoc.txt
+	# with information why docs are not available and how to install them.
+	install -Dm644 "$srcdir"/nodoc.txt \
+		"$pkgdir"/$docdir/nodoc.txt
+	local f; for f in "$subpkgdir/$docdir"/*.txt; do
+		ln -s nodoc.txt "$pkgdir/$docdir/$(basename $f)"
+	done
+}
+
+
+sha512sums="
+15eafa31cfee04f72f87ca442382d79a5c1f2e7699709cd1f713196a09425c55bca0587afc206488c528fa707515f12f8e2bc91460126c77ab3bc8e776deba76  neovim-0.11.4.tar.gz
+bad34ecd68ef5909356c2d2010c074fc37af61ae91529fa24ac98515405d0331df6481439c37ab7a8eec86d21d173e99f5ff98d6d564f870bf667c07e02c1e5b  qnx-endian.patch
+1067ea1b1117fd501c9180b1a5cec2b911e2ce8651f79a5b101a6a289c0686074d2fec53673fbbba2b36dd35e12ab648d968ac95e18cb94bc9bf9e015c719639  qnx-forkpty.patch
+0b88f94c0da69723cf07b05f2e1bf9b4c046e62be9fa24e87cc6c117982a3db4d43c1fe6744f8dbba5c2757a02620971dea1f008f4fc3912177a1e593096bdec  qnx-remove-util.patch
+f010963bda4faafcea776ef1765b99834b14fd03f6a4f2918506f2a01c5a2712dc07575919e8033e027f28782c9ea59effd39a8a081b6cf77e9da3279275d2f8  qnx-define.patch
+44bc920ba9c7cc39fdc8417d81beb26a04383cca0128c55fe14561508bf3593fdee169dded8c3f5dd78b448deb15e967875440f98a4f58bf719f68b5bde9cf61  nodoc.txt
+"

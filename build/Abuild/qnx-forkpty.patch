@@ -1,0 +1,13 @@
+diff --git a/src/nvim/os/pty_proc_unix.c b/src/nvim/os/pty_proc_unix.c
+index 10a464bbc3..117f6fc1c2 100644
+--- a/src/nvim/os/pty_proc_unix.c
++++ b/src/nvim/os/pty_proc_unix.c
+@@ -21,6 +21,8 @@
+ # include <sys/stream.h>
+ # include <sys/syscall.h>
+ # include <unistd.h>
++#elif defined(__QNX__)
++# include <unix.h>
+ #else
+ # include <pty.h>
+ #endif

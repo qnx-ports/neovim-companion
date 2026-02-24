@@ -1,0 +1,14 @@
+diff --git a/src/nvim/CMakeLists.txt b/src/nvim/CMakeLists.txt
+index 2a60eefe7c..80cce6bebe 100644
+--- a/src/nvim/CMakeLists.txt
++++ b/src/nvim/CMakeLists.txt
+@@ -145,7 +145,7 @@ endif()
+ # Platform specific options
+ if(UNIX)
+   target_link_libraries(main_lib INTERFACE m)
+-  if (NOT CMAKE_SYSTEM_NAME STREQUAL "SunOS")
++  if (NOT CMAKE_SYSTEM_NAME STREQUAL "SunOS" AND NOT CMAKE_SYSTEM_NAME STREQUAL "QNX")
+     target_link_libraries(main_lib INTERFACE util)
+   endif()
+ endif()
+

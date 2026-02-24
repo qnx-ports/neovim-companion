@@ -1,0 +1,10 @@
+--- neovim-0.11.4.orig/test/unit/preprocess.lua
++++ neovim-0.11.4/test/unit/preprocess.lua
+@@ -123,6 +123,7 @@
+   self:define('EXTERN', nil, 'extern')
+   self:define('INIT', { '...' }, '')
+   self:define('_GNU_SOURCE')
++  self:define('_QNX_SOURCE')
+   self:define('INCLUDE_GENERATED_DECLARATIONS')
+   self:define('UNIT_TESTING')
+   self:define('UNIT_TESTING_LUA_PREPROCESSING')
